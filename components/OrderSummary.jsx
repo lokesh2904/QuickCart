@@ -45,35 +45,39 @@ const OrderSummary = () => {
     };
 
     const createOrder = async () => {
+      try{
         if (!selectedAddress) {
-            toast.error("Please select a shipping address.");
-            return;
+           return  toast.error("Please select a shipping address.")
+            
         }
         
-        try {
-            const token = await getToken();
-            const orderDetails = {
-                items: cartItems,
-                address: selectedAddress,
-                amount: getCartAmount() + Math.floor(getCartAmount() * 0.02)
-            };
+        let cartItemsArray=Object.keys(cartItems).map((key) => ({product:key,quantity:cartItems[key]}))
+         cartItemsArray=cartItemsArray.filter(item => item.qunatity>0)
 
-            const { data } = await axios.post('/api/order/create', orderDetails, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+           if(cartItemsArray.length===0){
+               return toast.error('Cart is empty')
+           }
 
-            if (data.success) {
-                toast.success("Order placed successfully!");
-                // You can redirect the user after a successful order
-                // router.push(`/order-confirmation/${data.orderId}`); 
-            } else {
-                toast.error(data.message);
-            }
-        } catch (error) {
-            toast.error(error.message || "Failed to place order.");
+            const token = await getToken()
+            const { data }=await axios.post('/api/order/create',{
+              address: selectedAddress._id,
+              items:cartItemsArray
+            },
+          {
+            headers: {Authorization:'Bearer${token}'}
+          })
+
+          if(data.success){
+            toast.success(data.message)
+            setCartItems({})
+            router.push('/order-placed')
+          }else{
+            toast.error(data.message)
+          }  catch(error){
+              toast.error(error.message)
+          }
         }
-    };
-
+    }    
     // This hook correctly handles the side effect of fetching data when the user changes.
     useEffect(() => {
         if (user) {
