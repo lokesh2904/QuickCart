@@ -12,12 +12,16 @@ const OrderSummary = () => {
         getCartAmount, 
         getToken, 
         user, 
-        cartItems 
+        cartItems,
+        // ✅ IMPROVEMENT: Get setCartItems to clear the cart after ordering
+        setCartItems 
     } = useAppContext();
 
     const [selectedAddress, setSelectedAddress] = useState(null);
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [userAddresses, setUserAddresses] = useState([]);
+    // ✅ IMPROVEMENT: Add a loading state for the "Place Order" button
+    const [isPlacingOrder, setIsPlacingOrder] = useState(false);
 
     const fetchUserAddresses = async () => {
         try {
@@ -45,48 +49,57 @@ const OrderSummary = () => {
     };
 
     const createOrder = async () => {
-      try{
-        if (!selectedAddress) {
-           return  toast.error("Please select a shipping address.")
+        // --- BUG FIX 1: Correctly structured try...catch block ---
+        // The catch block was previously inside the 'if' statement.
+        try {
+            if (!selectedAddress) {
+                return toast.error("Please select a shipping address.");
+            }
             
+            let cartItemsArray = Object.keys(cartItems).map((key) => ({ product: key, quantity: cartItems[key] }));
+            
+            // --- BUG FIX 2: Corrected typo from 'qunatity' to 'quantity' ---
+            cartItemsArray = cartItemsArray.filter(item => item.quantity > 0);
+
+            if (cartItemsArray.length === 0) {
+                return toast.error('Cart is empty');
+            }
+
+            setIsPlacingOrder(true); // Set loading state to true
+            const token = await getToken();
+
+            // --- BUG FIX 3: Corrected template literal for the token ---
+            const { data } = await axios.post('/api/order/create', {
+                address: selectedAddress._id,
+                items: cartItemsArray
+            }, {
+                headers: { Authorization: `Bearer ${token}` } // Used backticks `` instead of single quotes ''
+            });
+
+            if (data.success) {
+                toast.success(data.message);
+                setCartItems({}); // Clear the cart in the context
+                router.push('/order-placed');
+            } else {
+                toast.error(data.message);
+            }
+        } catch (error) {
+            toast.error(error.message);
+        } finally {
+            setIsPlacingOrder(false); // Set loading state to false in both success and error cases
         }
-        
-        let cartItemsArray=Object.keys(cartItems).map((key) => ({product:key,quantity:cartItems[key]}))
-         cartItemsArray=cartItemsArray.filter(item => item.qunatity>0)
-
-           if(cartItemsArray.length===0){
-               return toast.error('Cart is empty')
-           }
-
-            const token = await getToken()
-            const { data }=await axios.post('/api/order/create',{
-              address: selectedAddress._id,
-              items:cartItemsArray
-            },
-          {
-            headers: {Authorization:'Bearer${token}'}
-          })
-
-          if(data.success){
-            toast.success(data.message)
-            setCartItems({})
-            router.push('/order-placed')
-          }else{
-            toast.error(data.message)
-          }  catch(error){
-              toast.error(error.message)
-          }
-        }
-    }    
-    // This hook correctly handles the side effect of fetching data when the user changes.
+    };
+    
     useEffect(() => {
         if (user) {
             fetchUserAddresses();
         }
     }, [user]);
 
-    // ✅ FIX: The main return statement is now correctly placed at the top level
-    // of the component, outside of the useEffect hook.
+    // ✅ IMPROVEMENT: Calculate tax and total with proper rounding for currency
+    const taxAmount = (getCartAmount() * 0.02).toFixed(2);
+    const totalAmount = (getCartAmount() + parseFloat(taxAmount)).toFixed(2);
+
     return (
         <div className="w-full md:w-96 bg-gray-500/5 p-5">
             <h2 className="text-xl md:text-2xl font-medium text-gray-700">
@@ -119,7 +132,7 @@ const OrderSummary = () => {
                             <ul className="absolute w-full bg-white border shadow-md mt-1 z-10 py-1.5">
                                 {userAddresses.map((address) => (
                                     <li
-                                        key={address._id || address.fullName}
+                                        key={address._id}
                                         className="px-4 py-2 hover:bg-gray-500/10 cursor-pointer"
                                         onClick={() => handleAddressSelect(address)}
                                     >
@@ -166,17 +179,21 @@ const OrderSummary = () => {
                     </div>
                     <div className="flex justify-between">
                         <p className="text-gray-600">Tax (2%)</p>
-                        <p className="font-medium text-gray-800">{currency}{Math.floor(getCartAmount() * 0.02)}</p>
+                        <p className="font-medium text-gray-800">{currency}{taxAmount}</p>
                     </div>
                     <div className="flex justify-between text-lg md:text-xl font-medium border-t pt-3">
                         <p>Total</p>
-                        <p>{currency}{getCartAmount() + Math.floor(getCartAmount() * 0.02)}</p>
+                        <p>{currency}{totalAmount}</p>
                     </div>
                 </div>
             </div>
 
-            <button onClick={createOrder} className="w-full bg-orange-600 text-white py-3 mt-5 hover:bg-orange-700">
-                Place Order
+            <button 
+                onClick={createOrder} 
+                disabled={isPlacingOrder} // Disable button while loading
+                className="w-full bg-orange-600 text-white py-3 mt-5 hover:bg-orange-700 disabled:bg-orange-400"
+            >
+                {isPlacingOrder ? "Placing Order..." : "Place Order"}
             </button>
         </div>
     );

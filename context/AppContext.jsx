@@ -2,7 +2,8 @@
 import { productsDummyData } from "@/assets/assets";
 import { useAuth, useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
-import { createContext, useContext, useEffect, useState } from "react";
+// 1. Import useMemo for performance optimization
+import { createContext, useContext, useEffect, useState, useMemo } from "react";
 import toast from "react-hot-toast";
 import axios from "axios";
 
@@ -34,7 +35,6 @@ export const AppContextProvider = (props) => {
                 toast.error(data.message)
             }
         } catch (error) {
-            // ✅ FIX: Use the error object from the catch block
             toast.error(error.message)
         }
     }
@@ -58,45 +58,51 @@ export const AppContextProvider = (props) => {
         }
     }
 
-    // ✅ FIX: Added async keyword
     const addToCart = async (itemId) => {
-        let cartData = structuredClone(cartItems);
-        if (cartData[itemId]) {
-            cartData[itemId] += 1;
-        } else {
-            cartData[itemId] = 1;
-        }
-        setCartItems(cartData);
+        // --- RELIABILITY FIX ---
+        // Save the original state in case the API call fails
+        const originalCart = structuredClone(cartItems);
+
+        // Optimistically update the UI
+        const newCart = structuredClone(cartItems);
+        newCart[itemId] = (newCart[itemId] || 0) + 1;
+        setCartItems(newCart);
         
         if (user) {
             try {
                 const token = await getToken()
-                // ✅ FIX: Used backticks for template literal
-                await axios.post('/api/cart/update', { cartData }, { headers: { Authorization: `Bearer ${token}` } })
+                await axios.post('/api/cart/update', { cartData: newCart }, { headers: { Authorization: `Bearer ${token}` } })
                 toast.success('Item added to cart')
             } catch (error) {
-                toast.error(error.message)
+                toast.error("Failed to add item. Reverting change.");
+                // If the API fails, revert the state to the original
+                setCartItems(originalCart);
             }
         }
     }
 
-    // ✅ FIX: Added async keyword
     const updateCartQuantity = async (itemId, quantity) => {
-        let cartData = structuredClone(cartItems);
+        // --- RELIABILITY FIX ---
+        const originalCart = structuredClone(cartItems);
+
+        // Optimistically update the UI
+        const newCart = structuredClone(cartItems);
         if (quantity === 0) {
-            delete cartData[itemId];
+            delete newCart[itemId];
         } else {
-            cartData[itemId] = quantity;
+            newCart[itemId] = quantity;
         }
-        setCartItems(cartData)
+        setCartItems(newCart)
+
         if (user) {
             try {
                 const token = await getToken()
-                // ✅ FIX: Used backticks for template literal
-                await axios.post('/api/cart/update', { cartData }, { headers: { Authorization: `Bearer ${token}` } })
+                await axios.post('/api/cart/update', { cartData: newCart }, { headers: { Authorization: `Bearer ${token}` } })
                 toast.success('Cart Updated')
             } catch (error) {
-                toast.error(error.message)
+                toast.error("Failed to update cart. Reverting change.");
+                // If the API fails, revert the state to the original
+                setCartItems(originalCart);
             }
         }
     }
@@ -132,7 +138,10 @@ export const AppContextProvider = (props) => {
         }
     }, [user])
 
-    const value = {
+    // --- PERFORMANCE FIX ---
+    // 2. Memoize the context value to prevent unnecessary re-renders
+    // This value object will only be recreated if one of the dependencies changes.
+    const value = useMemo(() => ({
         user, getToken,
         currency, router,
         isSeller, setIsSeller,
@@ -141,11 +150,10 @@ export const AppContextProvider = (props) => {
         cartItems, setCartItems,
         addToCart, updateCartQuantity,
         getCartCount, getCartAmount
-    }
+    }), [products, userData, cartItems, isSeller, user]);
 
     return (
         <AppContext.Provider value={value}>
-            {/* ✅ FIX: Corrected typo from "chidren" to "children" */}
             {props.children}
         </AppContext.Provider>
     )
